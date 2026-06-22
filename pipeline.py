@@ -10,7 +10,6 @@
   preview.html        – 브라우저 미리보기용 전체 페이지
   meta.json           – 제목·태그·요약
   header_image.jpg    – 대표 이미지 (있을 경우)
-  linkedin_draft.txt  – 링크드인 게시 초안
   posting_guide.txt   – 수동 등록 순서 안내
 
 티스토리 등록 방법 (HTML 모드):
@@ -18,7 +17,7 @@
 
 필요 패키지: pip install requests python-dotenv
 환경변수(.env): SLACK_BOT_TOKEN, SLACK_CHANNEL_ID
-               (선택) MEDIA_DIR, HEADER_IMAGE_PATH, SLACK_DM_USER_ID, TISTORY_BLOG_NAME
+               (선택) MEDIA_DIR, HEADER_IMAGE_PATH, TISTORY_BLOG_NAME
 """
 
 import io
@@ -566,54 +565,6 @@ def _build_posting_guide(post: dict, post_date: str, has_image: bool) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 링크드인 초안 + 슬랙 DM
-# ---------------------------------------------------------------------------
-def build_linkedin_draft(post: dict, post_date: str) -> str:
-    titles = re.findall(r"<h2[^>]*>([^<]+)</h2>", post["html_body"])
-    if not titles:
-        raw = re.findall(r"<p style='[^']*'>(.+?)</p>", post["html_body"])
-        titles = [re.sub(r"<[^>]+>", "", t) for t in raw[:5]]
-    bullets = "\n".join(f"🔹 {t.strip()}" for t in titles[:5])
-    hashtags = " ".join(f"#{t}" for t in post.get("tags", [])[:5])
-
-    blog_name = os.environ.get("TISTORY_BLOG_NAME", "")
-    blog_url = f"https://{blog_name}.tistory.com" if blog_name else "[블로그 URL 입력]"
-
-    sep = "━" * 20
-    return (
-        f"📌 링크드인 게시용 초안 — {post_date}\n"
-        f"복사해서 링크드인에 붙여넣으세요. 💡 줄만 직접 채우면 됩니다.\n"
-        f"{sep}\n"
-        f"간밤 크립토·매크로, 한 장으로 정리합니다.\n\n"
-        f"국내 텔레그램 KOL 채널을 매일 모니터링하며 시장이 어디에 주목하는지 추렸습니다.\n\n"
-        f"{bullets}\n\n"
-        f"💡 [오늘의 한 줄 인사이트를 직접 작성하세요]\n\n"
-        f"전체 브리핑 👉 {blog_url}\n\n"
-        f"{hashtags}\n"
-        f"{sep}"
-    )
-
-
-def send_slack_dm(text: str) -> bool:
-    token = os.environ.get("SLACK_BOT_TOKEN", "")
-    user_id = os.environ.get("SLACK_DM_USER_ID", "")
-    if not token or not user_id:
-        print("  (슬랙 DM 스킵 — SLACK_DM_USER_ID 없음)", file=sys.stderr)
-        return False
-    resp = requests.post(
-        "https://slack.com/api/chat.postMessage",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        json={"channel": user_id, "text": text},
-        timeout=10,
-    )
-    data = resp.json()
-    if not data.get("ok"):
-        print(f"  (슬랙 DM 실패: {data.get('error')})", file=sys.stderr)
-        return False
-    return True
-
-
-# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 def main():
@@ -651,11 +602,7 @@ def main():
     post = format_briefing(briefing, post_date)
 
     print("[3/3] 로컬 파일 저장 중...", file=sys.stderr)
-    linkedin_draft = build_linkedin_draft(post, post_date)
     day_dir = save_output(post, post_date, image_bytes)
-
-    # 링크드인 초안 파일로도 저장
-    (day_dir / "linkedin_draft.txt").write_text(linkedin_draft, encoding="utf-8")
 
     print(f"\n저장 완료: {day_dir}/")
     print(f"  제목:    {post['title']}")
@@ -667,12 +614,6 @@ def main():
         size_str = f"{size // 1024}KB" if size >= 1024 else f"{size}B"
         print(f"    {f.name:<25} {size_str}")
     print(f"\n  → posting_guide.txt 를 참고해 티스토리에 수동 등록하세요.")
-
-    # 링크드인 초안 슬랙 DM (옵션)
-    if os.environ.get("SLACK_DM_USER_ID"):
-        print("\n[슬랙 DM] 링크드인 초안 전송 중...", file=sys.stderr)
-        if send_slack_dm(linkedin_draft):
-            print("  슬랙 DM 전송 완료")
 
 
 if __name__ == "__main__":
